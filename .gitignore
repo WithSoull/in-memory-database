@@ -22,9 +22,13 @@ vendor/
 go.work
 go.work.sum
 
+# Logs
+app.log
 
+# Env files
 *.env
 
+# OS/IDE external files
 .vscode/
 *.idea
 *.DS_Store
