@@ -9,7 +9,7 @@ import (
 )
 
 type InMemoryEngine struct {
-	hashtable *Hashtable
+	hashtable Hashtable
 	logger    *zap.Logger
 }
 
