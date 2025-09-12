@@ -14,12 +14,19 @@ type InMemoryEngine struct {
 }
 
 func NewEngine(logger *zap.Logger) (storage.Engine, error) {
+	return NewEngineWithHashtable(logger, NewHashtable())
+}
+
+func NewEngineWithHashtable(logger *zap.Logger, ht Hashtable) (storage.Engine, error) {
 	if logger == nil {
 		return nil, derrors.ErrInvalidLogger
 	}
+	if ht == nil {
+		ht = NewHashtable()
+	}
 	return &InMemoryEngine{
 		logger:    logger,
-		hashtable: NewHashtable(),
+		hashtable: ht,
 	}, nil
 }
 
