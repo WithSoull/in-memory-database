@@ -8,13 +8,19 @@ import (
 	"go.uber.org/zap"
 )
 
-type Storage struct {
+type Storage interface {
+	Set(context.Context, string, string) error
+	Get(context.Context, string) (string, error)
+	Del(context.Context, string) error
+}
+
+type storage struct {
 	engine    Engine
 	generator *IDGenerator
 	logger    *zap.Logger
 }
 
-func NewStrorage(engine Engine, logger *zap.Logger) (*Storage, error) {
+func NewStrorage(engine Engine, logger *zap.Logger) (Storage, error) {
 	if engine == nil {
 		return nil, derrors.ErrIvalidEngine
 	}
@@ -25,14 +31,14 @@ func NewStrorage(engine Engine, logger *zap.Logger) (*Storage, error) {
 
 	generator := NewIDGenerator()
 
-	return &Storage{
+	return &storage{
 		engine:    engine,
 		generator: generator,
 		logger:    logger,
 	}, nil
 }
 
-func (s *Storage) Set(ctx context.Context, key, value string) error {
+func (s *storage) Set(ctx context.Context, key, value string) error {
 	txID := s.generator.Generate()
 	ctx = txidctx.InjectTxID(ctx, txID)
 
@@ -41,7 +47,7 @@ func (s *Storage) Set(ctx context.Context, key, value string) error {
 	return nil
 }
 
-func (s *Storage) Get(ctx context.Context, key string) (string, error) {
+func (s *storage) Get(ctx context.Context, key string) (string, error) {
 	txID := s.generator.Generate()
 	ctx = txidctx.InjectTxID(ctx, txID)
 
@@ -53,7 +59,7 @@ func (s *Storage) Get(ctx context.Context, key string) (string, error) {
 	return value, nil
 }
 
-func (s *Storage) Del(ctx context.Context, key string) error {
+func (s *storage) Del(ctx context.Context, key string) error {
 	txID := s.generator.Generate()
 	ctx = txidctx.InjectTxID(ctx, txID)
 
