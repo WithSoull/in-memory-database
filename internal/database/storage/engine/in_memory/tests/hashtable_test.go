@@ -1,6 +1,8 @@
 package tests
 
 import (
+	"fmt"
+	"sync"
 	"testing"
 
 	inmemory "github.com/WithSoull/in-memory-database/internal/database/storage/engine/in_memory"
@@ -157,4 +159,45 @@ func TestNewHashtable(t *testing.T) {
 	val, ok := ht.Get("any")
 	require.False(t, ok, "New hashtable should be empty")
 	require.Empty(t, val, "Value should be empty for non-existent key")
+}
+
+// Need -race flag for the actual testing
+func TestHashtableConcurrentAccess(t *testing.T) {
+	t.Parallel()
+
+	ht := inmemory.NewHashtable()
+
+	const (
+		workers    = 64
+		iterations = 500
+	)
+
+	var wg sync.WaitGroup
+	wg.Add(workers)
+
+	for worker := 0; worker < workers; worker++ {
+		worker := worker
+		go func() {
+			defer wg.Done()
+
+			for i := 0; i < iterations; i++ {
+				key := fmt.Sprintf("key-%d", i%16)
+				value := fmt.Sprintf("value-%d-%d", worker, i)
+
+				ht.Set(key, value)
+				_, _ = ht.Get(key)
+
+				if i%3 == 0 {
+					ht.Del(key)
+				}
+			}
+		}()
+	}
+
+	wg.Wait()
+
+	ht.Set("final-key", "final-value")
+	got, ok := ht.Get("final-key")
+	require.True(t, ok)
+	require.Equal(t, "final-value", got)
 }
