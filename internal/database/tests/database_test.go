@@ -200,3 +200,80 @@ func TestHandleQuery(t *testing.T) {
 		})
 	}
 }
+
+type testCompute struct{}
+
+func (testCompute) Parse(string) (compute.Query, error) {
+	return nil, nil
+}
+
+type testStorage struct{}
+
+func (testStorage) Set(context.Context, string, string) error {
+	return nil
+}
+
+func (testStorage) Get(context.Context, string) (string, error) {
+	return "", nil
+}
+
+func (testStorage) Del(context.Context, string) error {
+	return nil
+}
+
+func TestNewDatabase(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name        string
+		compute     compute.Compute
+		storage     storage.Storage
+		logger      *zap.Logger
+		expectedErr string
+	}{
+		{
+			name:        "nil compute",
+			compute:     nil,
+			storage:     testStorage{},
+			logger:      zap.NewNop(),
+			expectedErr: "compute is invalid",
+		},
+		{
+			name:        "nil storage",
+			compute:     testCompute{},
+			storage:     nil,
+			logger:      zap.NewNop(),
+			expectedErr: "storage is invalid",
+		},
+		{
+			name:        "nil logger",
+			compute:     testCompute{},
+			storage:     testStorage{},
+			logger:      nil,
+			expectedErr: "logger is invalid",
+		},
+		{
+			name:    "success",
+			compute: testCompute{},
+			storage: testStorage{},
+			logger:  zap.NewNop(),
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			db, err := database.NewDatabase(tt.compute, tt.storage, tt.logger)
+			if tt.expectedErr != "" {
+				require.EqualError(t, err, tt.expectedErr)
+				require.Nil(t, db)
+				return
+			}
+
+			require.NoError(t, err)
+			require.NotNil(t, db)
+		})
+	}
+}

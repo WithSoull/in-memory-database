@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	inmemory "github.com/WithSoull/in-memory-database/internal/database/storage/engine/in_memory"
+	derrors "github.com/WithSoull/in-memory-database/internal/domainerrors"
 	"github.com/WithSoull/in-memory-database/mocks"
 	"github.com/gojuno/minimock/v3"
 	"github.com/stretchr/testify/require"
@@ -172,4 +173,41 @@ func TestEngineDel(t *testing.T) {
 	require.NoError(t, err)
 
 	engine.Del(ctx, key)
+}
+
+func TestNewEngineWithHashtable(t *testing.T) {
+	t.Parallel()
+
+	t.Run("nil logger", func(t *testing.T) {
+		t.Parallel()
+		engine, err := inmemory.NewEngineWithHashtable(nil, nil)
+		require.ErrorIs(t, err, derrors.ErrInvalidLogger)
+		require.Nil(t, engine)
+	})
+
+	t.Run("nil hashtable uses default", func(t *testing.T) {
+		t.Parallel()
+		engine, err := inmemory.NewEngineWithHashtable(zap.NewNop(), nil)
+		require.NoError(t, err)
+		require.NotNil(t, engine)
+
+		ctx := context.Background()
+		engine.Set(ctx, "key", "value")
+
+		value, found := engine.Get(ctx, "key")
+		require.True(t, found)
+		require.Equal(t, "value", value)
+
+		engine.Del(ctx, "key")
+		_, found = engine.Get(ctx, "key")
+		require.False(t, found)
+	})
+}
+
+func TestNewEngine(t *testing.T) {
+	t.Parallel()
+
+	engine, err := inmemory.NewEngine(nil)
+	require.ErrorIs(t, err, derrors.ErrInvalidLogger)
+	require.Nil(t, engine)
 }
