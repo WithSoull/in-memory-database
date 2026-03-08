@@ -49,23 +49,25 @@ type LoggingConfig struct {
 }
 
 func DefaultConfig() Config {
-	return Config{
+	cfg := Config{
 		Engine: EngineConfig{
 			Type: defaultEngineType,
 		},
 		Network: NetworkConfig{
-			Address:             defaultNetworkAddress,
-			MaxConnections:      defaultMaxConnections,
-			MaxMessageSize:      defaultMaxMessageSize,
-			IdleTimeout:         defaultIdleTimeout,
-			MaxMessageSizeBytes: 4 * 1024,
-			IdleTimeoutDuration: 5 * time.Minute,
+			Address:        defaultNetworkAddress,
+			MaxConnections: defaultMaxConnections,
+			MaxMessageSize: defaultMaxMessageSize,
+			IdleTimeout:    defaultIdleTimeout,
 		},
 		Logging: LoggingConfig{
 			Level:  defaultLoggingLevel,
 			Output: defaultLoggingOutput,
 		},
 	}
+	if err := cfg.parseDerivedValues(); err != nil {
+		panic(fmt.Sprintf("invalid default config: %v", err))
+	}
+	return cfg
 }
 
 func Load(path string) (Config, error) {
@@ -76,6 +78,9 @@ func Load(path string) (Config, error) {
 
 	data, err := os.ReadFile(path)
 	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return cfg, nil
+		}
 		return Config{}, fmt.Errorf("read config: %w", err)
 	}
 
