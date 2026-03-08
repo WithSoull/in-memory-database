@@ -34,21 +34,11 @@ func NewServer(cfg appconfig.NetworkConfig, logger *zap.Logger) (network.TCPServ
 		return nil, fmt.Errorf("failed to listen: %w", err)
 	}
 
-	maxConn := cfg.MaxConnections
-	if maxConn <= 0 {
-		maxConn = 100
-	}
-
-	bufSize := cfg.MaxMessageSizeBytes
-	if bufSize <= 0 {
-		bufSize = 4 << 10
-	}
-
 	return &server{
 		listener:       listener,
 		idleTimeout:    cfg.IdleTimeoutDuration,
-		maxMessageSize: bufSize,
-		semaphore:      make(chan struct{}, maxConn),
+		maxMessageSize: cfg.MaxMessageSizeBytes,
+		semaphore:      make(chan struct{}, cfg.MaxConnections),
 		logger:         logger,
 	}, nil
 }
