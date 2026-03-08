@@ -281,3 +281,49 @@ func TestHandleQueries_ConcurrentConnections(t *testing.T) {
 
 	wg.Wait()
 }
+
+func TestHandleQueries_IdleTimeout(t *testing.T) {
+	t.Parallel()
+
+	cfg := defaultCfg()
+	cfg.IdleTimeoutDuration = 150 * time.Millisecond
+
+	addr := startServer(t, cfg, echoHandler)
+
+	conn, err := net.Dial("tcp", addr)
+	require.NoError(t, err)
+	defer conn.Close()
+
+	// Do not send anything; server must close the connection after idle timeout.
+	conn.SetDeadline(time.Now().Add(2 * time.Second))
+	buf := make([]byte, 1)
+	_, err = conn.Read(buf)
+	require.Error(t, err, "connection should be closed by server after idle timeout")
+}
+
+func TestHandleQueries_PanicRecovery(t *testing.T) {
+	t.Parallel()
+
+	panicHandler := func(_ context.Context, _ []byte) []byte {
+		panic("test panic")
+	}
+
+	addr := startServer(t, defaultCfg(), panicHandler)
+
+	// Handler panics — server must recover, close the connection, and keep running.
+	conn1, err := net.Dial("tcp", addr)
+	require.NoError(t, err)
+	defer conn1.Close()
+
+	_, err = fmt.Fprintln(conn1, "SET x 1")
+	require.NoError(t, err)
+
+	buf := make([]byte, 1)
+	_, err = conn1.Read(buf)
+	require.Error(t, err, "connection should be closed after panic recovery")
+
+	// Server must still accept new connections after the panic.
+	conn2, err := net.Dial("tcp", addr)
+	require.NoError(t, err)
+	conn2.Close()
+}
