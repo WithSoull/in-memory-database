@@ -169,11 +169,11 @@ func TestHandleQueries_MaxConnections(t *testing.T) {
 
 	// Exchange a request/response to make sure the server has fully accepted conn1
 	// (semaphore slot taken, handleConnection goroutine running and waiting for more input).
-	_, err = fmt.Fprintln(conn1, "ping")
+	_, err = fmt.Fprintln(conn1, "hello")
 	require.NoError(t, err)
 	line, err := bufio.NewReader(conn1).ReadString('\n')
 	require.NoError(t, err)
-	require.Equal(t, "ping\n", line)
+	require.Equal(t, "hello\n", line)
 
 	// Second connection: semaphore is full — server must reject it immediately.
 	conn2, err := net.Dial("tcp", addr)
@@ -280,6 +280,28 @@ func TestHandleQueries_ConcurrentConnections(t *testing.T) {
 	}
 
 	wg.Wait()
+}
+
+func TestHandleQueries_Ping(t *testing.T) {
+	t.Parallel()
+
+	addr := startServer(t, defaultCfg(), echoHandler)
+
+	conn, err := net.Dial("tcp", addr)
+	require.NoError(t, err)
+	defer conn.Close()
+
+	reader := bufio.NewReader(conn)
+
+	// PING is case-insensitive and handled at the network layer, not by the app handler.
+	for _, msg := range []string{"PING", "ping", "Ping"} {
+		_, err = fmt.Fprintln(conn, msg)
+		require.NoError(t, err)
+
+		line, err := reader.ReadString('\n')
+		require.NoError(t, err)
+		require.Equal(t, "PONG\n", line, "input: %q", msg)
+	}
 }
 
 func TestHandleQueries_IdleTimeout(t *testing.T) {

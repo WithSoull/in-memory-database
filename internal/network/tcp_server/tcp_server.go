@@ -2,6 +2,7 @@ package tcpserver
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -138,6 +139,11 @@ func (s *server) handleConnection(ctx context.Context, conn net.Conn, handler ne
 				return
 			}
 			_, _ = conn.Write([]byte("[error] message too large\n"))
+			continue
+		}
+
+		if bytes.EqualFold(line, []byte("PING")) {
+			_, _ = conn.Write([]byte("PONG\n"))
 			continue
 		}
 
