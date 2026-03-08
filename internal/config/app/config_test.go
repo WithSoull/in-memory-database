@@ -34,6 +34,14 @@ func TestLoadWithEmptyPathReturnsDefaults(t *testing.T) {
 	require.Equal(t, appconfig.DefaultConfig(), cfg)
 }
 
+func TestLoadNonExistentFileReturnsDefaults(t *testing.T) {
+	t.Parallel()
+
+	cfg, err := appconfig.Load("/nonexistent/path/config.yaml")
+	require.NoError(t, err)
+	require.Equal(t, appconfig.DefaultConfig(), cfg)
+}
+
 func TestLoadFullConfig(t *testing.T) {
 	t.Parallel()
 
