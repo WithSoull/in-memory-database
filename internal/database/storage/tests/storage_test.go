@@ -2,6 +2,8 @@ package tests
 
 import (
 	"context"
+	"fmt"
+	"sync"
 	"testing"
 
 	txidctx "github.com/WithSoull/in-memory-database/internal/contextx/txIDctx"
@@ -39,6 +41,12 @@ type engineSpy struct {
 	getFound bool
 }
 
+type concurrentEngineSpy struct {
+	mu          sync.Mutex
+	txIDs       []int64
+	missingTxID bool
+}
+
 func (e *engineSpy) Set(ctx context.Context, key, value string) {
 	txID, ok := txidctx.ExtractIP(ctx)
 	e.setCalls = append(e.setCalls, setCall{
@@ -66,6 +74,43 @@ func (e *engineSpy) Del(ctx context.Context, key string) {
 		txID:    txID,
 		hasTxID: ok,
 	})
+}
+
+func (e *concurrentEngineSpy) Set(ctx context.Context, key, value string) {
+	e.recordTxID(ctx)
+}
+
+func (e *concurrentEngineSpy) Get(ctx context.Context, key string) (string, bool) {
+	e.recordTxID(ctx)
+	return "", false
+}
+
+func (e *concurrentEngineSpy) Del(ctx context.Context, key string) {
+	e.recordTxID(ctx)
+}
+
+func (e *concurrentEngineSpy) recordTxID(ctx context.Context) {
+	txID, ok := txidctx.ExtractIP(ctx)
+
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	if !ok {
+		e.missingTxID = true
+		return
+	}
+
+	e.txIDs = append(e.txIDs, txID)
+}
+
+func (e *concurrentEngineSpy) snapshot() ([]int64, bool) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	result := make([]int64, len(e.txIDs))
+	copy(result, e.txIDs)
+
+	return result, e.missingTxID
 }
 
 func TestNewStrorage(t *testing.T) {
@@ -169,4 +214,62 @@ func TestStorageGetNotFound(t *testing.T) {
 	require.Len(t, engine.getCalls, 1)
 	require.True(t, engine.getCalls[0].hasTxID)
 	require.Equal(t, int64(1), engine.getCalls[0].txID)
+}
+
+func TestStorageConcurrentTxIDUniqueness(t *testing.T) {
+	t.Parallel()
+
+	const (
+		workers       = 50
+		opsPerWorker  = 200
+		totalRequests = workers * opsPerWorker
+	)
+
+	engine := &concurrentEngineSpy{}
+	s, err := storage.NewStrorage(engine, zap.NewNop())
+	require.NoError(t, err)
+
+	var wg sync.WaitGroup
+	errCh := make(chan error, workers)
+	wg.Add(workers)
+
+	for worker := 0; worker < workers; worker++ {
+		worker := worker
+		go func() {
+			defer wg.Done()
+
+			for i := 0; i < opsPerWorker; i++ {
+				key := fmt.Sprintf("key-%d-%d", worker, i)
+				value := fmt.Sprintf("value-%d-%d", worker, i)
+				if setErr := s.Set(context.Background(), key, value); setErr != nil {
+					errCh <- setErr
+					return
+				}
+			}
+		}()
+	}
+
+	wg.Wait()
+	close(errCh)
+
+	for setErr := range errCh {
+		require.NoError(t, setErr)
+	}
+
+	txIDs, missingTxID := engine.snapshot()
+	require.False(t, missingTxID, "every call should have txID in context")
+	require.Len(t, txIDs, totalRequests)
+
+	seen := make(map[int64]struct{}, totalRequests)
+	for _, txID := range txIDs {
+		require.Greater(t, txID, int64(0))
+		seen[txID] = struct{}{}
+	}
+
+	require.Len(t, seen, totalRequests, "txIDs should be unique")
+
+	for expected := 1; expected <= totalRequests; expected++ {
+		_, ok := seen[int64(expected)]
+		require.True(t, ok, "missing txID=%d", expected)
+	}
 }

@@ -2,7 +2,7 @@
 
 LOCAL_BIN=$(CURDIR)/bin
 
-.PHONY: get-deps install-deps test test-cover
+.PHONY: get-deps install-deps test test-cover run-server run-client
 
 get-deps:
 	go get -u go.uber.org/zap
@@ -18,3 +18,9 @@ test:
 test-cover:
 	go test ./... -coverpkg=./... -coverprofile=coverage.out
 	go tool cover -func=coverage.out | tail -n 1
+
+run-server:
+	go run ./cmd/server/...
+
+run-client:
+	go run ./cmd/client/...

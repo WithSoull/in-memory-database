@@ -16,7 +16,7 @@ import (
 )
 
 func main() {
-	logger, err := zap_config.ZapConfig(zap.DebugLevel).Build()
+	logger, err := zap_config.ZapConfig(zap.DebugLevel, "app.log").Build()
 	if err != nil {
 		panic(err)
 	}

@@ -32,3 +32,6 @@ app.log
 .vscode/
 *.idea
 *.DS_Store
+
+# AI 
+./CLAUDE.md

@@ -1,5 +1,7 @@
 package storage
 
+import "sync/atomic"
+
 type IDGenerator struct {
 	counter int64
 }
@@ -10,6 +12,5 @@ func NewIDGenerator() *IDGenerator {
 }
 
 func (g *IDGenerator) Generate() int64 {
-	g.counter += 1
-	return g.counter
+	return atomic.AddInt64(&g.counter, 1)
 }
