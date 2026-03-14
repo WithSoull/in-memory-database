@@ -2,8 +2,7 @@
 
 # TL;DR
 1. Конфигурация WAL — добавить секцию wal в YAML-конфиг (enabled, data_directory, segment_max_size, batch_max_size, batch_timeout). По умолчанию WAL отключён.
-2. Формат записи и сериализация — бинарный формат entry: [CRC32][длина][данные]. Данные содержат тип команды (SET/DEL), ключ и значение. Пакет
-internal/wal/entry/.
+2. Формат записи и сериализация — бинарный формат entry: [CRC32][LSN][длина][данные]. LSN — глобальный монотонный счётчик записей. Данные содержат тип команды (SET/DEL), ключ и значение. Пакет internal/wal/entry/.
 3. Сегмент WAL — обёртка над файлом: WriteBatch (write + fsync), ReadAll для восстановления, IsFull для ротации. Пакет internal/wal/segment/.
 4. WAL-менеджер с батчингом — основная логика: клиент вызывает Write(entry), блокируется на канале done. Flush батча происходит по лимиту размера или таймауту.
 Все клиенты одного батча разблокируются одновременно. Ротация сегментов при переполнении.
@@ -60,20 +59,27 @@ wal:
 **Формат одной записи (entry):**
 
 ```
-[CRC32 — 4 байта][Длина данных — 4 байта][Данные — N байт]
+[CRC32 — 4 байта][LSN — 8 байт][Длина данных — 4 байта][Данные — N байт]
 ```
+
+- **CRC32** — контрольная сумма от `[LSN][Длина данных][Данные]`. Позволяет при восстановлении обнаружить повреждённые записи.
+- **LSN (Log Sequence Number)** — глобальный монотонно возрастающий `int64`. Каждая запись в WAL получает уникальный LSN. Генерируется через `atomic.AddInt64`. LSN не сбрасывается при ротации сегмента — он глобален для всего WAL.
 
 Данные внутри entry — это закодированная операция:
 - Тип команды: `SET` или `DEL` (1 байт: `0x01` = SET, `0x02` = DEL).
 - Для SET: `[command_byte][key_len (4 bytes)][key][value_len (4 bytes)][value]`.
 - Для DEL: `[command_byte][key_len (4 bytes)][key]`.
 
-CRC32 считается от `[Длина данных][Данные]` и позволяет при восстановлении обнаружить повреждённые записи.
+**Зачем LSN:**
+- Уникальная идентификация каждой записи в логе.
+- При восстановлении можно определить последний успешно записанный LSN и продолжить нумерацию.
+- Основа для будущих возможностей: репликация, checkpoint'ы, point-in-time recovery.
 
 **Детали реализации:**
-- Пакет `internal/wal/entry/` — структура `Entry{CommandType, Key, Value}` + методы `Encode() []byte`, `Decode([]byte) (Entry, error)`.
+- Пакет `internal/wal/entry/` — структура `Entry{LSN, CommandType, Key, Value}` + методы `Encode() []byte`, `Decode([]byte) (Entry, error)`.
+- LSN-генератор — отдельная структура с `atomic.AddInt64`, аналогично существующему `IDGenerator` в storage.
 - CRC32 из стандартной библиотеки (`hash/crc32`).
-- Тесты: кодирование/декодирование round-trip, битый CRC → ошибка.
+- Тесты: кодирование/декодирование round-trip, битый CRC → ошибка, монотонность LSN.
 
 **Файлы:** `internal/wal/entry/entry.go`, `internal/wal/entry/tests/entry_test.go`.
 
@@ -120,6 +126,7 @@ type WAL struct {
     cfg             config.WALConfig
     currentSegment  *segment.Segment
     segmentCounter  int
+    lsnCounter      int64          // глобальный LSN-счётчик (atomic)
     mu              sync.Mutex
     batch           []batchItem
     flushTimer      *time.Timer
@@ -132,14 +139,14 @@ type batchItem struct {
 }
 
 func NewWAL(cfg config.WALConfig, logger *zap.Logger) (*WAL, error)
-func (w *WAL) Write(entry entry.Entry) error    // блокирующий вызов для клиента
-func (w *WAL) Recover(engine Engine) error       // восстановление из всех сегментов
-func (w *WAL) Close() error                      // flush оставшегося батча + закрытие
+func (w *WAL) Write(commandType byte, key, value string) error  // блокирующий; LSN назначается внутри
+func (w *WAL) Recover(engine Engine) error                       // восстановление + установка lsnCounter
+func (w *WAL) Close() error                                      // flush оставшегося батча + закрытие
 ```
 
 **Механизм батчинга (ключевая логика):**
 
-1. Клиент вызывает `Write(entry)` — entry добавляется в `batch`, клиенту возвращается канал `done`.
+1. Клиент вызывает `Write(commandType, key, value)` — WAL назначает следующий LSN через `atomic.AddInt64`, создаёт entry, добавляет в `batch`, клиенту возвращается канал `done`.
 2. Клиент блокируется на `<-done` (ждёт, пока батч запишется).
 3. Flush батча происходит при одном из условий:
    - `len(batch) >= batchMaxSize` — батч заполнен.
@@ -168,7 +175,9 @@ func (w *WAL) Close() error                      // flush оставшегося
 3. Для каждого сегмента вызываем `ReadAll()` и последовательно применяем:
    - SET → `engine.Set(ctx, key, value)`
    - DEL → `engine.Del(ctx, key)`
-4. После восстановления создаём новый сегмент для записи (с номером = последний + 1).
+4. Запоминаем максимальный LSN из всех прочитанных записей.
+5. Устанавливаем `lsnCounter = maxLSN`, чтобы новые записи продолжили нумерацию.
+6. После восстановления создаём новый сегмент для записи (с номером = последний + 1).
 
 **Обработка ошибок:**
 - Если CRC записи не совпадает — пропускаем запись, логируем warning.
