@@ -24,6 +24,14 @@ func TestDefaultConfig(t *testing.T) {
 	require.Equal(t, 5*time.Minute, cfg.Network.IdleTimeoutDuration)
 	require.Equal(t, "info", cfg.Logging.Level)
 	require.Equal(t, "app.log", cfg.Logging.Output)
+
+	require.False(t, cfg.WAL.Enabled)
+	require.Equal(t, "./data/wal", cfg.WAL.DataPath)
+	require.Equal(t, "16MB", cfg.WAL.SegmentMaxSize)
+	require.Equal(t, 16*1024*1024, cfg.WAL.SegmentMaxSizeBytes)
+	require.Equal(t, 100, cfg.WAL.BatchMaxLen)
+	require.Equal(t, "10ms", cfg.WAL.BatchTimeout)
+	require.Equal(t, 10*time.Millisecond, cfg.WAL.BatchTimeoutDuration)
 }
 
 func TestLoadWithEmptyPathReturnsDefaults(t *testing.T) {
@@ -97,6 +105,78 @@ logging:
 	require.Equal(t, 5*time.Minute, cfg.Network.IdleTimeoutDuration)
 	require.Equal(t, "warn", cfg.Logging.Level)
 	require.Equal(t, "app.log", cfg.Logging.Output)
+}
+
+func TestLoadFullWALConfig(t *testing.T) {
+	t.Parallel()
+
+	content := `
+wal:
+  enabled: true
+  data_directory: "/tmp/wal"
+  segment_max_size: "32MB"
+  batch_max_size: 200
+  batch_timeout: "20ms"
+`
+	path := writeConfigFile(t, content)
+
+	cfg, err := appconfig.Load(path)
+	require.NoError(t, err)
+
+	require.True(t, cfg.WAL.Enabled)
+	require.Equal(t, "/tmp/wal", cfg.WAL.DataPath)
+	require.Equal(t, "32MB", cfg.WAL.SegmentMaxSize)
+	require.Equal(t, 32*1024*1024, cfg.WAL.SegmentMaxSizeBytes)
+	require.Equal(t, 200, cfg.WAL.BatchMaxLen)
+	require.Equal(t, "20ms", cfg.WAL.BatchTimeout)
+	require.Equal(t, 20*time.Millisecond, cfg.WAL.BatchTimeoutDuration)
+}
+
+func TestLoadPartialWALConfigAppliesDefaults(t *testing.T) {
+	t.Parallel()
+
+	content := `
+wal:
+  enabled: true
+`
+	path := writeConfigFile(t, content)
+
+	cfg, err := appconfig.Load(path)
+	require.NoError(t, err)
+
+	require.True(t, cfg.WAL.Enabled)
+	require.Equal(t, "./data/wal", cfg.WAL.DataPath)
+	require.Equal(t, "16MB", cfg.WAL.SegmentMaxSize)
+	require.Equal(t, 16*1024*1024, cfg.WAL.SegmentMaxSizeBytes)
+	require.Equal(t, 100, cfg.WAL.BatchMaxLen)
+	require.Equal(t, "10ms", cfg.WAL.BatchTimeout)
+	require.Equal(t, 10*time.Millisecond, cfg.WAL.BatchTimeoutDuration)
+}
+
+func TestLoadInvalidWALSegmentMaxSize(t *testing.T) {
+	t.Parallel()
+
+	content := `
+wal:
+  segment_max_size: "4XB"
+`
+	path := writeConfigFile(t, content)
+	_, err := appconfig.Load(path)
+	require.Error(t, err)
+	require.ErrorContains(t, err, "invalid WAL.segment_max_size")
+}
+
+func TestLoadInvalidWALBatchTimeout(t *testing.T) {
+	t.Parallel()
+
+	content := `
+wal:
+  batch_timeout: "not-a-duration"
+`
+	path := writeConfigFile(t, content)
+	_, err := appconfig.Load(path)
+	require.Error(t, err)
+	require.ErrorContains(t, err, "invalid WAL.batch_timeout")
 }
 
 func TestLoadInvalidYAML(t *testing.T) {
@@ -186,7 +266,6 @@ func TestParseMessageSize(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 

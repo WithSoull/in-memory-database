@@ -14,20 +14,34 @@ import (
 )
 
 const (
-	defaultEngineType           = "in_memory"
-	defaultNetworkAddress       = "127.0.0.1:3223"
-	defaultMaxConnections       = 100
-	defaultMaxMessageSize       = "4KB"
-	defaultIdleTimeout          = "5m"
-	defaultLoggingLevel         = "info"
-	defaultLoggingOutput        = "app.log"
-	kilobyte              int64 = 1024
+	// Engine defaults
+	defaultEngineType = "in_memory"
+
+	// Network defaults
+	defaultNetworkAddress = "127.0.0.1:3223"
+	defaultMaxConnections = 100
+	defaultMaxMessageSize = "4KB"
+	defaultIdleTimeout    = "5m"
+
+	// Logging defaults
+	defaultLoggingLevel  = "info"
+	defaultLoggingOutput = "app.log"
+
+	// WAL defaults
+	defaultWALEnabled        = false
+	defaultWALDataPath       = "./data/wal"
+	defaultWALSegmentMaxSize = "16MB"
+	defaultWALBatchMaxLen    = 100
+	defaultWALBatchTimeout   = "10ms"
+
+	kilobyte int64 = 1024
 )
 
 type Config struct {
 	Engine  EngineConfig  `yaml:"engine"`
 	Network NetworkConfig `yaml:"network"`
 	Logging LoggingConfig `yaml:"logging"`
+	WAL     WALConfig     `yaml:"wal"`
 }
 
 type EngineConfig struct {
@@ -35,10 +49,11 @@ type EngineConfig struct {
 }
 
 type NetworkConfig struct {
-	Address             string        `yaml:"address"`
-	MaxConnections      int           `yaml:"max_connections"`
-	MaxMessageSize      string        `yaml:"max_message_size"`
-	IdleTimeout         string        `yaml:"idle_timeout"`
+	Address        string `yaml:"address"`
+	MaxConnections int    `yaml:"max_connections"`
+	MaxMessageSize string `yaml:"max_message_size"`
+	IdleTimeout    string `yaml:"idle_timeout"`
+
 	MaxMessageSizeBytes int           `yaml:"-"`
 	IdleTimeoutDuration time.Duration `yaml:"-"`
 }
@@ -46,6 +61,17 @@ type NetworkConfig struct {
 type LoggingConfig struct {
 	Level  string `yaml:"level"`
 	Output string `yaml:"output"`
+}
+
+type WALConfig struct {
+	Enabled        bool   `yaml:"enabled"`
+	DataPath       string `yaml:"data_directory"`
+	SegmentMaxSize string `yaml:"segment_max_size"`
+	BatchMaxLen    int    `yaml:"batch_max_size"`
+	BatchTimeout   string `yaml:"batch_timeout"`
+
+	SegmentMaxSizeBytes  int           `yaml:"-"`
+	BatchTimeoutDuration time.Duration `yaml:"-"`
 }
 
 func DefaultConfig() Config {
@@ -62,6 +88,13 @@ func DefaultConfig() Config {
 		Logging: LoggingConfig{
 			Level:  defaultLoggingLevel,
 			Output: defaultLoggingOutput,
+		},
+		WAL: WALConfig{
+			Enabled:        defaultWALEnabled,
+			DataPath:       defaultWALDataPath,
+			SegmentMaxSize: defaultWALSegmentMaxSize,
+			BatchMaxLen:    defaultWALBatchMaxLen,
+			BatchTimeout:   defaultWALBatchTimeout,
 		},
 	}
 	if err := cfg.parseDerivedValues(); err != nil {
@@ -196,10 +229,27 @@ func (c *Config) applyDefaults() {
 	if strings.TrimSpace(c.Logging.Output) == "" {
 		c.Logging.Output = defaultLoggingOutput
 	}
+
+	if strings.TrimSpace(c.WAL.DataPath) == "" {
+		c.WAL.DataPath = defaultWALDataPath
+	}
+
+	if strings.TrimSpace(c.WAL.SegmentMaxSize) == "" {
+		c.WAL.SegmentMaxSize = defaultWALSegmentMaxSize
+	}
+
+	if c.WAL.BatchMaxLen <= 0 {
+		c.WAL.BatchMaxLen = defaultWALBatchMaxLen
+	}
+
+	if strings.TrimSpace(c.WAL.BatchTimeout) == "" {
+		c.WAL.BatchTimeout = defaultWALBatchTimeout
+	}
 }
 
 func (c *Config) parseDerivedValues() error {
-	sizeBytes, err := ParseMessageSize(c.Network.MaxMessageSize)
+	// Network
+	messageSizeBytes, err := ParseMessageSize(c.Network.MaxMessageSize)
 	if err != nil {
 		return fmt.Errorf("invalid network.max_message_size: %w", err)
 	}
@@ -212,8 +262,24 @@ func (c *Config) parseDerivedValues() error {
 		return errors.New("invalid network.idle_timeout: must be greater than zero")
 	}
 
-	c.Network.MaxMessageSizeBytes = sizeBytes
+	c.Network.MaxMessageSizeBytes = messageSizeBytes
 	c.Network.IdleTimeoutDuration = idleTimeout
+
+	// WAL
+	segmentMaxSizeBytes, err := ParseMessageSize(c.WAL.SegmentMaxSize)
+	if err != nil {
+		return fmt.Errorf("invalid WAL.segment_max_size: %w", err)
+	}
+	batchTimeoutDuration, err := time.ParseDuration(c.WAL.BatchTimeout)
+	if err != nil {
+		return fmt.Errorf("invalid WAL.batch_timeout: %w", err)
+	}
+	if batchTimeoutDuration <= 0 {
+		return errors.New("invalid WAL.batch_timeout: must be greater than zero")
+	}
+
+	c.WAL.SegmentMaxSizeBytes = segmentMaxSizeBytes
+	c.WAL.BatchTimeoutDuration = batchTimeoutDuration
 
 	return nil
 }
