@@ -1,4 +1,4 @@
-package app_config_test
+package tests
 
 import (
 	"os"
