@@ -8,7 +8,7 @@ import (
 	"strings"
 	"syscall"
 
-	appconfig "github.com/WithSoull/in-memory-database/internal/config/app"
+	appconfig "github.com/WithSoull/in-memory-database/internal/config/app_config"
 	zap_config "github.com/WithSoull/in-memory-database/internal/config/zap"
 	"github.com/WithSoull/in-memory-database/internal/database"
 	"github.com/WithSoull/in-memory-database/internal/database/compute/parser"
@@ -25,24 +25,25 @@ func main() {
 	configPath := flag.String("config", defaultServerConfigPath, "path to config YAML (optional)")
 	flag.Parse()
 
-	config, err := appconfig.Load(*configPath)
-	if err != nil {
+	if err := appconfig.InitConfig(*configPath); err != nil {
 		panic(err)
 	}
 
+	logCfg := appconfig.Logging()
 	var level zapcore.Level
-	if err := level.UnmarshalText([]byte(config.Logging.Level)); err != nil {
+	if err := level.UnmarshalText([]byte(logCfg.Level)); err != nil {
 		level = zapcore.InfoLevel
 	}
 
-	logger, err := zap_config.ZapConfig(level, config.Logging.Output).Build()
+	logger, err := zap_config.ZapConfig(level, logCfg.Output).Build()
 	if err != nil {
 		panic(err)
 	}
 	defer logger.Sync()
 
-	if config.Engine.Type != "in_memory" {
-		logger.Fatal("unsupported engine type", zap.String("type", config.Engine.Type))
+	engineCfg := appconfig.Engine()
+	if engineCfg.Type != "in_memory" {
+		logger.Fatal("unsupported engine type", zap.String("type", engineCfg.Type))
 	}
 
 	compute := parser.NewParser(logger)
@@ -62,7 +63,8 @@ func main() {
 		logger.Fatal("failed to create database", zap.Error(err))
 	}
 
-	srv, err := tcpserver.NewServer(config.Network, logger)
+	networkCfg := appconfig.Network()
+	srv, err := tcpserver.NewServer(*networkCfg, logger)
 	if err != nil {
 		logger.Fatal("failed to create server", zap.Error(err))
 	}
@@ -74,7 +76,7 @@ func main() {
 		return []byte(db.HandleQuery(ctx, strings.TrimSpace(string(req))))
 	}
 
-	logger.Info("server started", zap.String("address", config.Network.Address))
+	logger.Info("server started", zap.String("address", networkCfg.Address))
 	srv.HandleQueries(ctx, handler)
 	logger.Info("server stopped")
 }

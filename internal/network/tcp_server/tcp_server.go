@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	appconfig "github.com/WithSoull/in-memory-database/internal/config/app"
+	appconfig "github.com/WithSoull/in-memory-database/internal/config/app_config"
 	derrors "github.com/WithSoull/in-memory-database/internal/domainerrors"
 	"github.com/WithSoull/in-memory-database/internal/network"
 	"go.uber.org/zap"

@@ -1,4 +1,4 @@
-package app_test
+package app_config_test
 
 import (
 	"os"
@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	appconfig "github.com/WithSoull/in-memory-database/internal/config/app"
+	appconfig "github.com/WithSoull/in-memory-database/internal/config/app_config"
 	"github.com/stretchr/testify/require"
 )
 
@@ -39,7 +39,8 @@ func TestLoadWithEmptyPathReturnsDefaults(t *testing.T) {
 
 	cfg, err := appconfig.Load("")
 	require.NoError(t, err)
-	require.Equal(t, appconfig.DefaultConfig(), cfg)
+	expected := appconfig.DefaultConfig()
+	require.Equal(t, &expected, cfg)
 }
 
 func TestLoadNonExistentFileReturnsDefaults(t *testing.T) {
@@ -47,7 +48,8 @@ func TestLoadNonExistentFileReturnsDefaults(t *testing.T) {
 
 	cfg, err := appconfig.Load("/nonexistent/path/config.yaml")
 	require.NoError(t, err)
-	require.Equal(t, appconfig.DefaultConfig(), cfg)
+	expected := appconfig.DefaultConfig()
+	require.Equal(t, &expected, cfg)
 }
 
 func TestLoadFullConfig(t *testing.T) {

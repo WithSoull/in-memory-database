@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	appconfig "github.com/WithSoull/in-memory-database/internal/config/app"
+	appconfig "github.com/WithSoull/in-memory-database/internal/config/app_config"
 	derrors "github.com/WithSoull/in-memory-database/internal/domainerrors"
 	tcpserver "github.com/WithSoull/in-memory-database/internal/network/tcp_server"
 	"github.com/stretchr/testify/require"

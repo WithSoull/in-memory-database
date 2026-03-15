@@ -1,4 +1,4 @@
-package app
+package app_config
 
 import (
 	"errors"
@@ -103,34 +103,34 @@ func DefaultConfig() Config {
 	return cfg
 }
 
-func Load(path string) (Config, error) {
+func Load(path string) (*Config, error) {
 	cfg := DefaultConfig()
 	if strings.TrimSpace(path) == "" {
-		return cfg, nil
+		return &cfg, nil
 	}
 
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			return cfg, nil
+			return &cfg, nil
 		}
-		return Config{}, fmt.Errorf("read config: %w", err)
+		return &Config{}, fmt.Errorf("read config: %w", err)
 	}
 
 	if len(data) == 0 {
-		return cfg, nil
+		return &cfg, nil
 	}
 
 	if err := yaml.Unmarshal(data, &cfg); err != nil {
-		return Config{}, fmt.Errorf("parse config yaml: %w", err)
+		return &Config{}, fmt.Errorf("parse config yaml: %w", err)
 	}
 
 	cfg.applyDefaults()
 	if err := cfg.parseDerivedValues(); err != nil {
-		return Config{}, err
+		return &Config{}, err
 	}
 
-	return cfg, nil
+	return &cfg, nil
 }
 
 func ParseMessageSize(raw string) (int, error) {
